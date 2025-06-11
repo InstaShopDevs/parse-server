@@ -83,6 +83,17 @@ export async function handleParseHeaders(req, res, next) {
       return malformedContext(req, res);
     }
   }
+  const OLD_MASTER_KEY = process.env.OLD_MASTER_KEY;
+  const masterKey = await req.config.loadMasterKey();
+
+  if (OLD_MASTER_KEY) {
+    if (req.get('X-Parse-Master-Key') === OLD_MASTER_KEY) {
+      req.headers['X-Parse-Master-Key'] = masterKey;
+    }
+    if (req.body && req.body._MasterKey === OLD_MASTER_KEY) {
+      req.body._MasterKey = masterKey;
+    }
+  }
   var info = {
     appId: req.get('X-Parse-Application-Id'),
     sessionToken: req.get('X-Parse-Session-Token'),
@@ -238,7 +249,6 @@ export async function handleParseHeaders(req, res, next) {
     );
   }
 
-  const masterKey = await req.config.loadMasterKey();
   let isMaster = info.masterKey === masterKey;
 
   if (isMaster && !checkIp(clientIp, req.config.masterKeyIps || [], req.config.masterKeyIpsStore)) {

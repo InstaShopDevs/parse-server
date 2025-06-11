@@ -1056,6 +1056,10 @@ module.exports.FileUploadOptions = {
   },
 };
 module.exports.DatabaseOptions = {
+  appName: {
+    env: 'ENV_NAME',
+    help: 'The application name to be added in MongoDB'
+  },
   autoSelectFamily: {
     env: 'PARSE_SERVER_DATABASE_AUTO_SELECT_FAMILY',
     help:
