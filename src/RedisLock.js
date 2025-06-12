@@ -8,7 +8,7 @@ export class RedisLock {
     this.client.on('error', (err) => console.error('Redis Client Error', err));
     this.isConnected = false;
     this.lockKey = 'parse-server:init-lock';
-    this.lockTimeout = 30000; // 30 seconds in ms
+    this.lockTimeout = 120000; // 2 minutes
     this.retryDelay = 1000; // 1 second between retries
     this.maxRetries = 30; // Max 30 retries (30 seconds total)
   }

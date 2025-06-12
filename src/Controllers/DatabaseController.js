@@ -1722,18 +1722,18 @@ class DatabaseController {
       const hasLock = await redisLock.acquireLock(instanceId);
       
       if (!hasLock) {
-        logger.info('Initialization already being handled by another instance. Skipping...');
+        logger.info(`[${instanceId}] Initialization already being handled by another instance. Skipping...`);
         return;
       }
-      
-      logger.info('Acquired initialization lock. Performing initialization...');
+
+      logger.info(`[${instanceId}] Acquired initialization lock. Performing initialization...`);
       
       // Create an interval to extend the lock
       const extendInterval = setInterval(async () => {
         try {
           await redisLock.extendLock(instanceId);
         } catch (err) {
-          logger.error('Failed to extend lock:', err);
+          logger.error(`[${instanceId}] Failed to extend lock:`, err);
           clearInterval(extendInterval);
         }
       }, redisLock.lockTimeout / 3);
@@ -1826,14 +1826,14 @@ class DatabaseController {
         }
         
         await this.adapter.updateSchemaWithIndexes();
-        logger.info('Initialization completed successfully');
-      } finally {
-        clearInterval(extendInterval);
-        await redisLock.releaseLock(instanceId);
-        logger.info('Released initialization lock');
-      }
+        logger.info(`[${instanceId}] Initialization completed successfully`);
+        } finally {
+          clearInterval(extendInterval);
+          await redisLock.releaseLock(instanceId);
+          logger.info(`[${instanceId}] Released initialization lock`);
+        }
     } catch (error) {
-      logger.error('Error during initialization:', error);
+      logger.error(`[${instanceId}] Error during initialization:`, error);
       throw error;
     } finally {
       await redisLock.disconnect();
