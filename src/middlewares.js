@@ -88,6 +88,10 @@ export async function handleParseHeaders(req, res, next) {
 
   if (OLD_MASTER_KEY) {
     if (req.get('X-Parse-Master-Key') === OLD_MASTER_KEY) {
+      const log = req.config?.loggerController || defaultLogger;
+      log.error(
+        `Soft error: Request using deprecated master key from '${process.env.ENV_NAME}' detected.`
+      );
       req.headers['X-Parse-Master-Key'] = mk;
     }
     if (req.body && req.body._MasterKey === OLD_MASTER_KEY) {
