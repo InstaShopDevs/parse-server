@@ -1714,7 +1714,7 @@ class DatabaseController {
   // have a Parse app without it having a _User collection.
   async performInitialization() {
     const { v4: uuidv4 } = require('uuid');
-    const RedisLock = require('../RedisLock');
+    const { RedisLock } = require('../RedisLock');
     const instanceId = uuidv4();
     const redisLock = new RedisLock();
     
