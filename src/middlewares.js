@@ -94,7 +94,7 @@ export async function handleParseHeaders(req, res, next) {
       req.body._MasterKey = mk;
       const log = req.config?.loggerController || defaultLogger;
       log.error(
-        `Soft error: Request using deprecated master key from '${process.env.ENV_NAME}' detected.`
+        `Soft error: Request using deprecated master key from IP: ${req.ip}, User-Agent: ${req.get('User-Agent')}, ClientVersion: ${req.body?._ClientVersion}`
       );
     }
   }
