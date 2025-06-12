@@ -1713,66 +1713,53 @@ class DatabaseController {
   // TODO: create indexes on first creation of a _User object. Otherwise it's impossible to
   // have a Parse app without it having a _User collection.
   async performInitialization() {
-    const { v4: uuidv4 } = require('uuid');
     const { RedisLock } = require('../RedisLock');
-    const instanceId = uuidv4();
     const redisLock = new RedisLock();
     
     try {
-      const hasLock = await redisLock.acquireLock(instanceId);
+      const hasLock = await redisLock.acquireLock();
       
       if (!hasLock) {
-        logger.info(`[${instanceId}] Initialization already being handled by another instance. Skipping...`);
+        logger.info('Initialization already handled by another instance or recently completed. Skipping...');
         return;
       }
 
-      logger.info(`[${instanceId}] Acquired initialization lock. Performing initialization...`);
+      logger.info('Acquired initialization lock. Performing initialization...');
+
+      // Original initialization code
+      await this.adapter.performInitialization({
+        VolatileClassesSchemas: SchemaController.VolatileClassesSchemas,
+      });
       
-      // Create an interval to extend the lock
-      const extendInterval = setInterval(async () => {
-        try {
-          await redisLock.extendLock(instanceId);
-        } catch (err) {
-          logger.error(`[${instanceId}] Failed to extend lock:`, err);
-          clearInterval(extendInterval);
-        }
-      }, redisLock.lockTimeout / 3);
+      const requiredUserFields = {
+        fields: {
+          ...SchemaController.defaultColumns._Default,
+          ...SchemaController.defaultColumns._User,
+        },
+      };
+      const requiredRoleFields = {
+        fields: {
+          ...SchemaController.defaultColumns._Default,
+          ...SchemaController.defaultColumns._Role,
+        },
+      };
+      const requiredIdempotencyFields = {
+        fields: {
+          ...SchemaController.defaultColumns._Default,
+          ...SchemaController.defaultColumns._Idempotency,
+        },
+      };
+      
+      await this.loadSchema().then(schema => schema.enforceClassExists('_User'));
+      await this.loadSchema().then(schema => schema.enforceClassExists('_Role'));
+      await this.loadSchema().then(schema => schema.enforceClassExists('_Idempotency'));
 
-      try {
-        // Original initialization code
-        await this.adapter.performInitialization({
-          VolatileClassesSchemas: SchemaController.VolatileClassesSchemas,
-        });
-        
-        const requiredUserFields = {
-          fields: {
-            ...SchemaController.defaultColumns._Default,
-            ...SchemaController.defaultColumns._User,
-          },
-        };
-        const requiredRoleFields = {
-          fields: {
-            ...SchemaController.defaultColumns._Default,
-            ...SchemaController.defaultColumns._Role,
-          },
-        };
-        const requiredIdempotencyFields = {
-          fields: {
-            ...SchemaController.defaultColumns._Default,
-            ...SchemaController.defaultColumns._Idempotency,
-          },
-        };
-        
-        await this.loadSchema().then(schema => schema.enforceClassExists('_User'));
-        await this.loadSchema().then(schema => schema.enforceClassExists('_Role'));
-        await this.loadSchema().then(schema => schema.enforceClassExists('_Idempotency'));
-
-        await this.adapter.ensureUniqueness('_User', requiredUserFields, ['username']).catch(error => {
+      await this.adapter.ensureUniqueness('_User', requiredUserFields, ['username']).catch(error => {
           logger.warn('Unable to ensure uniqueness for usernames: ', error);
           throw error;
         });
 
-        if (!this.options.enableCollationCaseComparison) {
+      if (!this.options.enableCollationCaseComparison) {
           await this.adapter
             .ensureIndex('_User', requiredUserFields, ['username'], 'case_insensitive_username', true)
             .catch(error => {
@@ -1805,9 +1792,9 @@ class DatabaseController {
             throw error;
           });
 
-        const isMongoAdapter = this.adapter instanceof MongoStorageAdapter;
-        const isPostgresAdapter = this.adapter instanceof PostgresStorageAdapter;
-        if (isMongoAdapter || isPostgresAdapter) {
+      const isMongoAdapter = this.adapter instanceof MongoStorageAdapter;
+      const isPostgresAdapter = this.adapter instanceof PostgresStorageAdapter;
+      if (isMongoAdapter || isPostgresAdapter) {
           let options = {};
           if (isMongoAdapter) {
             options = {
@@ -1824,19 +1811,13 @@ class DatabaseController {
               throw error;
             });
         }
-        
-        await this.adapter.updateSchemaWithIndexes();
-        logger.info(`[${instanceId}] Initialization completed successfully`);
-        } finally {
-          clearInterval(extendInterval);
-          await redisLock.releaseLock(instanceId);
-          logger.info(`[${instanceId}] Released initialization lock`);
-        }
+      
+      await this.adapter.updateSchemaWithIndexes();
+      logger.info('Initialization completed successfully');
+      
     } catch (error) {
-      logger.error(`[${instanceId}] Error during initialization:`, error);
+      logger.error('Error during initialization:', error);
       throw error;
-    } finally {
-      await redisLock.disconnect();
     }
   }
 
