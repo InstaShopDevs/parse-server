@@ -92,10 +92,12 @@ export async function handleParseHeaders(req, res, next) {
     }
     if (req.body && req.body._MasterKey === OLD_MASTER_KEY) {
       req.body._MasterKey = mk;
-      const log = req.config?.loggerController || defaultLogger;
-      log.error(
-        `Soft error: Request using deprecated master key from IP: ${req.ip}, User-Agent: ${req.get('User-Agent')}, ClientVersion: ${req.body?._ClientVersion}`
-      );
+      if (process.env.NODE_ENV === "production") {
+        const log = req.config?.loggerController || defaultLogger;
+        log.error(
+          `Soft error: Request using deprecated master key from IP: ${req.ip}, User-Agent: ${req.get('User-Agent')}, ClientVersion: ${req.body?._ClientVersion}`
+        );
+      }
     }
   }
   var info = {
