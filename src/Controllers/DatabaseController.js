@@ -1713,112 +1713,113 @@ class DatabaseController {
   // TODO: create indexes on first creation of a _User object. Otherwise it's impossible to
   // have a Parse app without it having a _User collection.
   async performInitialization() {
-    const { RedisLock } = require('../RedisLock');
-    const redisLock = new RedisLock();
-    
     try {
-      const hasLock = await redisLock.acquireLock();
-      
-      if (!hasLock) {
-        logger.info('Initialization already handled by another instance or recently completed. Skipping...');
-        return;
+      if (this.options.ensureIndexOnce) {
+        const { RedisLock } = require('../RedisLock');
+        const redisLock = new RedisLock();
+        
+        const hasLock = await redisLock.acquireLock();
+
+        if (!hasLock) {
+          logger.info('Initialization already handled by another instance or recently completed. Skipping...');
+          return;
+        }
+
+        logger.info('Acquired initialization lock. Performing initialization...');
       }
-
-      logger.info('Acquired initialization lock. Performing initialization...');
-
-      // Original initialization code
-      await this.adapter.performInitialization({
-        VolatileClassesSchemas: SchemaController.VolatileClassesSchemas,
-      });
-      
-      const requiredUserFields = {
-        fields: {
-          ...SchemaController.defaultColumns._Default,
-          ...SchemaController.defaultColumns._User,
-        },
-      };
-      const requiredRoleFields = {
-        fields: {
-          ...SchemaController.defaultColumns._Default,
-          ...SchemaController.defaultColumns._Role,
-        },
-      };
-      const requiredIdempotencyFields = {
-        fields: {
-          ...SchemaController.defaultColumns._Default,
-          ...SchemaController.defaultColumns._Idempotency,
-        },
-      };
-      
-      await this.loadSchema().then(schema => schema.enforceClassExists('_User'));
-      await this.loadSchema().then(schema => schema.enforceClassExists('_Role'));
-      await this.loadSchema().then(schema => schema.enforceClassExists('_Idempotency'));
-
-      await this.adapter.ensureUniqueness('_User', requiredUserFields, ['username']).catch(error => {
-          logger.warn('Unable to ensure uniqueness for usernames: ', error);
-          throw error;
-        });
-
-      if (!this.options.enableCollationCaseComparison) {
-          await this.adapter
-            .ensureIndex('_User', requiredUserFields, ['username'], 'case_insensitive_username', true)
-            .catch(error => {
-              logger.warn('Unable to create case insensitive username index: ', error);
-              throw error;
-            });
-
-          await this.adapter
-            .ensureIndex('_User', requiredUserFields, ['email'], 'case_insensitive_email', true)
-            .catch(error => {
-              logger.warn('Unable to create case insensitive email index: ', error);
-              throw error;
-            });
-        }
-
-        await this.adapter.ensureUniqueness('_User', requiredUserFields, ['email']).catch(error => {
-          logger.warn('Unable to ensure uniqueness for user email addresses: ', error);
-          throw error;
-        });
-
-        await this.adapter.ensureUniqueness('_Role', requiredRoleFields, ['name']).catch(error => {
-          logger.warn('Unable to ensure uniqueness for role name: ', error);
-          throw error;
-        });
-
-        await this.adapter
-          .ensureUniqueness('_Idempotency', requiredIdempotencyFields, ['reqId'])
-          .catch(error => {
-            logger.warn('Unable to ensure uniqueness for idempotency request ID: ', error);
-            throw error;
-          });
-
-      const isMongoAdapter = this.adapter instanceof MongoStorageAdapter;
-      const isPostgresAdapter = this.adapter instanceof PostgresStorageAdapter;
-      if (isMongoAdapter || isPostgresAdapter) {
-          let options = {};
-          if (isMongoAdapter) {
-            options = {
-              ttl: 0,
-            };
-          } else if (isPostgresAdapter) {
-            options = this.idempotencyOptions;
-            options.setIdempotencyFunction = true;
-          }
-          await this.adapter
-            .ensureIndex('_Idempotency', requiredIdempotencyFields, ['expire'], 'ttl', false, options)
-            .catch(error => {
-              logger.warn('Unable to create TTL index for idempotency expire date: ', error);
-              throw error;
-            });
-        }
-      
-      await this.adapter.updateSchemaWithIndexes();
+      await this.performInitializationOriginal();
       logger.info('Initialization completed successfully');
       
     } catch (error) {
       logger.error('Error during initialization:', error);
       throw error;
     }
+  }
+
+  async performInitializationOriginal() {
+    await this.adapter.performInitialization({
+      VolatileClassesSchemas: SchemaController.VolatileClassesSchemas,
+    });
+    const requiredUserFields = {
+      fields: {
+        ...SchemaController.defaultColumns._Default,
+        ...SchemaController.defaultColumns._User,
+      },
+    };
+    const requiredRoleFields = {
+      fields: {
+        ...SchemaController.defaultColumns._Default,
+        ...SchemaController.defaultColumns._Role,
+      },
+    };
+    const requiredIdempotencyFields = {
+      fields: {
+        ...SchemaController.defaultColumns._Default,
+        ...SchemaController.defaultColumns._Idempotency,
+      },
+    };
+    await this.loadSchema().then(schema => schema.enforceClassExists('_User'));
+    await this.loadSchema().then(schema => schema.enforceClassExists('_Role'));
+    await this.loadSchema().then(schema => schema.enforceClassExists('_Idempotency'));
+
+    await this.adapter.ensureUniqueness('_User', requiredUserFields, ['username']).catch(error => {
+      logger.warn('Unable to ensure uniqueness for usernames: ', error);
+      throw error;
+    });
+
+    if (!this.options.enableCollationCaseComparison) {
+      await this.adapter
+        .ensureIndex('_User', requiredUserFields, ['username'], 'case_insensitive_username', true)
+        .catch(error => {
+          logger.warn('Unable to create case insensitive username index: ', error);
+          throw error;
+        });
+
+      await this.adapter
+        .ensureIndex('_User', requiredUserFields, ['email'], 'case_insensitive_email', true)
+        .catch(error => {
+          logger.warn('Unable to create case insensitive email index: ', error);
+          throw error;
+        });
+    }
+
+    await this.adapter.ensureUniqueness('_User', requiredUserFields, ['email']).catch(error => {
+      logger.warn('Unable to ensure uniqueness for user email addresses: ', error);
+      throw error;
+    });
+
+    await this.adapter.ensureUniqueness('_Role', requiredRoleFields, ['name']).catch(error => {
+      logger.warn('Unable to ensure uniqueness for role name: ', error);
+      throw error;
+    });
+
+    await this.adapter
+      .ensureUniqueness('_Idempotency', requiredIdempotencyFields, ['reqId'])
+      .catch(error => {
+        logger.warn('Unable to ensure uniqueness for idempotency request ID: ', error);
+        throw error;
+      });
+
+    const isMongoAdapter = this.adapter instanceof MongoStorageAdapter;
+    const isPostgresAdapter = this.adapter instanceof PostgresStorageAdapter;
+    if (isMongoAdapter || isPostgresAdapter) {
+      let options = {};
+      if (isMongoAdapter) {
+        options = {
+          ttl: 0,
+        };
+      } else if (isPostgresAdapter) {
+        options = this.idempotencyOptions;
+        options.setIdempotencyFunction = true;
+      }
+      await this.adapter
+        .ensureIndex('_Idempotency', requiredIdempotencyFields, ['expire'], 'ttl', false, options)
+        .catch(error => {
+          logger.warn('Unable to create TTL index for idempotency expire date: ', error);
+          throw error;
+        });
+    }
+    await this.adapter.updateSchemaWithIndexes();
   }
 
 

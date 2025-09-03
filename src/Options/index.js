@@ -84,6 +84,9 @@ export interface ParseServerOptions {
   :ENV: PARSE_SERVER_LOGS_FOLDER
   :DEFAULT: ./logs */
   logsFolder: ?string;
+  /* Ensures that indexes are created only once
+  :DEFAULT: false */
+  ensureIndexOnce: ?boolean;
   /* Set the logging to verbose
   :ENV: VERBOSE */
   verbose: ?boolean;

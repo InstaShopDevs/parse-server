@@ -81,6 +81,7 @@ export class Config {
     readOnlyMasterKey,
     allowHeaders,
     idempotencyOptions,
+    ensureIndexOnce,
     fileUpload,
     pages,
     security,
@@ -127,6 +128,7 @@ export class Config {
     this.validateMaxLimit(maxLimit);
     this.validateAllowHeaders(allowHeaders);
     this.validateIdempotencyOptions(idempotencyOptions);
+    this.validateEnsureIndexOnce(ensureIndexOnce);
     this.validatePagesOptions(pages);
     this.validateSecurityOptions(security);
     this.validateSchemaOptions(schema);
@@ -327,6 +329,14 @@ export class Config {
       idempotencyOptions.paths = IdempotencyOptions.paths.default;
     } else if (!(idempotencyOptions.paths instanceof Array)) {
       throw 'idempotency paths must be of an array of strings';
+    }
+  }
+
+  static validateEnsureIndexOnce(ensureIndexOnce) {
+    if (ensureIndexOnce) {
+      if (typeof ensureIndexOnce !== 'boolean') {
+        throw 'Parse Server option ensureIndexOnce must be a boolean.';
+      }
     }
   }
 
