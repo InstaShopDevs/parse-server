@@ -257,6 +257,11 @@ module.exports.ParseServerOptions = {
     action: parsers.booleanParser,
     default: true,
   },
+  ensureIndexOnce: {
+    env: 'PARSE_SERVER_ENSURE_INDEX_ONCE',
+    help: 'Ensure that indexes are created only once',
+    action: parsers.booleanParser
+  },
   expireInactiveSessions: {
     env: 'PARSE_SERVER_EXPIRE_INACTIVE_SESSIONS',
     help:
