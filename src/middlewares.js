@@ -94,7 +94,19 @@ export async function handleParseHeaders(req, res, next) {
       req.body._MasterKey = mk;
       if (process.env.NODE_ENV === "production") {
         const log = req.config?.loggerController || defaultLogger;
-        const fullIp = req.headers['x-real-ip'] || req.headers['x-remote-ip'] || req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || req.connection?.socket?.remoteAddress || null;
+        const fullIp = (() => {
+          const headers = req?.headers || {};
+          if (headers['cf-connecting-ip']) {
+            return headers['cf-connecting-ip'];
+          }
+          if (headers['x-forwarded-for']) {
+            const forwardedArr = headers['x-forwarded-for'].split(', ');
+            if (forwardedArr.length > 0) {
+              return forwardedArr[0].trim();
+            }
+          }
+          return headers['x-real-ip'] || headers['x-remote-ip'] || req?.socket?.remoteAddress;
+        })();
         log.error(
           `Soft error: Request using deprecated master key from IP: ${fullIp}, URL: ${req.originalUrl}, User-Agent: ${req.get('User-Agent')}, ClientVersion: ${req.body?._ClientVersion}`
         );
