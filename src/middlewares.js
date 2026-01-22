@@ -94,21 +94,29 @@ export async function handleParseHeaders(req, res, next) {
       req.body._MasterKey = mk;
       if (process.env.NODE_ENV === "production") {
         const log = req.config?.loggerController || defaultLogger;
-        const fullIp = (() => {
+        const fullIps = (() => {
           const headers = req?.headers || {};
+          const ips = [];
           if (headers['cf-connecting-ip']) {
-            return headers['cf-connecting-ip'];
+            ips.push(headers['cf-connecting-ip']);
           }
           if (headers['x-forwarded-for']) {
             const forwardedArr = headers['x-forwarded-for'].split(', ');
-            if (forwardedArr.length > 0) {
-              return forwardedArr[0].trim();
-            }
+            ips.push(...forwardedArr.map(ip => ip.trim()));
           }
-          return headers['x-real-ip'] || headers['x-remote-ip'] || req?.socket?.remoteAddress;
+          if (headers['x-real-ip']) {
+            ips.push(headers['x-real-ip']);
+          }
+          if (headers['x-remote-ip']) {
+            ips.push(headers['x-remote-ip']);
+          }
+          if (req?.socket?.remoteAddress && !ips.includes(req.socket.remoteAddress)) {
+            ips.push(req.socket.remoteAddress);
+          }
+          return ips;
         })();
         log.error(
-          `Soft error: Request using deprecated master key from IP: ${fullIp}, URL: ${req.originalUrl}, User-Agent: ${req.get('User-Agent')}, ClientVersion: ${req.body?._ClientVersion}`
+          `Soft error: Request using deprecated master key from URL: ${req.originalUrl}, User-Agent: ${req.get('User-Agent')}, ClientVersion: ${req.body?._ClientVersion}, IPs: ${JSON.stringify(fullIps)}, `
         );
       }
     }
