@@ -153,6 +153,7 @@ export class FunctionsRouter extends PromiseRouter {
                   functionName,
                   params,
                   user: userString,
+                  isMaster: req.auth && req.auth.isMaster
                 }
               );
             }
