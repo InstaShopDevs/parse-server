@@ -117,7 +117,7 @@ export class FunctionsRouter extends PromiseRouter {
       },
     };
   }
-  static async handleCloudFunction(req) {
+  static handleCloudFunction(req) {
     const functionName = req.params.functionName;
     const applicationId = req.config.applicationId;
     const theFunction = triggers.getFunction(functionName, applicationId);
@@ -127,7 +127,6 @@ export class FunctionsRouter extends PromiseRouter {
     }
     let params = Object.assign({}, req.body, req.query);
     params = parseParams(params, req.config);
-    const roles = req.auth ? await req.auth.getUserRoles() : [];
     const request = {
       params: params,
       master: req.auth && req.auth.isMaster,
@@ -138,7 +137,7 @@ export class FunctionsRouter extends PromiseRouter {
       ip: req.config.ip,
       functionName,
       context: req.info.context,
-      roles,
+      roles: []
     };
 
     return new Promise(function (resolve, reject) {
@@ -185,8 +184,11 @@ export class FunctionsRouter extends PromiseRouter {
           }
         }
       );
-      return Promise.resolve()
-        .then(() => {
+
+      const rolesPromise = req.auth ? req.auth.getUserRoles() : Promise.resolve([]);
+      return rolesPromise.catch(() => [])
+        .then((roles) => {
+          request.roles = roles;
           return triggers.maybeRunValidator(request, functionName, req.auth);
         })
         .then(() => {

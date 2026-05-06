@@ -206,7 +206,7 @@ export async function runTrigger(trigger, name, request, auth) {
   return await trigger(request);
 }
 
-export function triggerExists(className: string, type: string, applicationId: string): boolean {
+export function triggerExists(className, type, applicationId) {
   return getTrigger(className, type, applicationId) != undefined;
 }
 
@@ -299,7 +299,7 @@ export function getRequestObject(
   return request;
 }
 
-export function getRequestQueryObject(triggerType, auth, query, count, config, context, isGet, roles) {
+export function getRequestQueryObject(triggerType, auth, query, count, config, context, isGet) {
   isGet = !!isGet;
 
   var request = {
@@ -311,8 +311,7 @@ export function getRequestQueryObject(triggerType, auth, query, count, config, c
     isGet,
     headers: config.headers,
     ip: config.ip,
-    context: context || {},
-    roles: roles || [],
+    context: context || {}
   };
 
   if (!auth) {
@@ -504,7 +503,7 @@ export function maybeRunAfterFindTrigger(
   });
 }
 
-export async function maybeRunQueryTrigger(
+export function maybeRunQueryTrigger(
   triggerType,
   className,
   restWhere,
@@ -531,7 +530,6 @@ export async function maybeRunQueryTrigger(
   if (restOptions) {
     count = !!restOptions.count;
   }
-  const roles = auth ? await auth.getUserRoles() : [];
   const requestObject = getRequestQueryObject(
     triggerType,
     auth,
@@ -539,11 +537,13 @@ export async function maybeRunQueryTrigger(
     count,
     config,
     context,
-    isGet,
-    roles
+    isGet
   );
-  return Promise.resolve()
-    .then(() => {
+
+  const rolesPromise = auth ? auth.getUserRoles() : Promise.resolve([]);
+  return rolesPromise.catch(() => [])
+    .then((roles) => {
+      requestObject.roles = roles;
       return maybeRunValidator(requestObject, `${triggerType}.${className}`, auth);
     })
     .then(() => {
