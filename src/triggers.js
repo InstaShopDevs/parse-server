@@ -311,7 +311,7 @@ export function getRequestQueryObject(triggerType, auth, query, count, config, c
     isGet,
     headers: config.headers,
     ip: config.ip,
-    context: context || {}
+    context: context || {},
   };
 
   if (!auth) {
@@ -539,7 +539,6 @@ export function maybeRunQueryTrigger(
     context,
     isGet
   );
-
   const rolesPromise = auth ? auth.getUserRoles() : Promise.resolve([]);
   return rolesPromise.catch(() => [])
     .then((roles) => {

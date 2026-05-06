@@ -137,7 +137,6 @@ export class FunctionsRouter extends PromiseRouter {
       ip: req.config.ip,
       functionName,
       context: req.info.context,
-      roles: []
     };
 
     return new Promise(function (resolve, reject) {
@@ -184,7 +183,6 @@ export class FunctionsRouter extends PromiseRouter {
           }
         }
       );
-
       const rolesPromise = req.auth ? req.auth.getUserRoles() : Promise.resolve([]);
       return rolesPromise.catch(() => [])
         .then((roles) => {
