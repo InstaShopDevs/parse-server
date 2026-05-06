@@ -299,7 +299,7 @@ export function getRequestObject(
   return request;
 }
 
-export function getRequestQueryObject(triggerType, auth, query, count, config, context, isGet) {
+export function getRequestQueryObject(triggerType, auth, query, count, config, context, isGet, roles) {
   isGet = !!isGet;
 
   var request = {
@@ -312,6 +312,7 @@ export function getRequestQueryObject(triggerType, auth, query, count, config, c
     headers: config.headers,
     ip: config.ip,
     context: context || {},
+    roles: roles || [],
   };
 
   if (!auth) {
@@ -503,7 +504,7 @@ export function maybeRunAfterFindTrigger(
   });
 }
 
-export function maybeRunQueryTrigger(
+export async function maybeRunQueryTrigger(
   triggerType,
   className,
   restWhere,
@@ -530,6 +531,7 @@ export function maybeRunQueryTrigger(
   if (restOptions) {
     count = !!restOptions.count;
   }
+  const roles = auth ? await auth.getUserRoles() : [];
   const requestObject = getRequestQueryObject(
     triggerType,
     auth,
@@ -537,7 +539,8 @@ export function maybeRunQueryTrigger(
     count,
     config,
     context,
-    isGet
+    isGet,
+    roles
   );
   return Promise.resolve()
     .then(() => {

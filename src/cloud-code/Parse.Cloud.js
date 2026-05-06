@@ -716,6 +716,7 @@ module.exports = ParseCloud;
  * @property {Boolean} master If true, means the master key was used.
  * @property {Parse.User} user If set, the user that made the request.
  * @property {Parse.Query} query The query triggering the hook.
+ * @property {Array<String>} roles The roles of the user making the request (e.g. `['role:Administrator']`).
  * @property {String} ip The IP address of the client making the request.
  * @property {Object} headers The original HTTP headers for the request.
  * @property {String} triggerName The name of the trigger (`beforeSave`, `afterSave`, ...)
