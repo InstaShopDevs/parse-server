@@ -743,6 +743,7 @@ module.exports = ParseCloud;
  * @property {Boolean} master If true, means the master key was used.
  * @property {Parse.User} user If set, the user that made the request.
  * @property {Object} params The params passed to the cloud function.
+ * @property {Array<String>} roles The roles of the user making the request (e.g. `['role:Administrator']`).
  */
 
 /**
