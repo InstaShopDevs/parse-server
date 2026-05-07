@@ -206,7 +206,7 @@ export async function runTrigger(trigger, name, request, auth) {
   return await trigger(request);
 }
 
-export function triggerExists(className: string, type: string, applicationId: string): boolean {
+export function triggerExists(className, type, applicationId) {
   return getTrigger(className, type, applicationId) != undefined;
 }
 
@@ -539,8 +539,10 @@ export function maybeRunQueryTrigger(
     context,
     isGet
   );
-  return Promise.resolve()
-    .then(() => {
+  const rolesPromise = auth ? auth.getUserRoles() : Promise.resolve([]);
+  return rolesPromise.catch(() => [])
+    .then((roles) => {
+      requestObject.roles = roles;
       return maybeRunValidator(requestObject, `${triggerType}.${className}`, auth);
     })
     .then(() => {

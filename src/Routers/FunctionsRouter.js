@@ -183,8 +183,10 @@ export class FunctionsRouter extends PromiseRouter {
           }
         }
       );
-      return Promise.resolve()
-        .then(() => {
+      const rolesPromise = req.auth ? req.auth.getUserRoles() : Promise.resolve([]);
+      return rolesPromise.catch(() => [])
+        .then((roles) => {
+          request.roles = roles;
           return triggers.maybeRunValidator(request, functionName, req.auth);
         })
         .then(() => {
