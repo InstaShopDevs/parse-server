@@ -152,8 +152,11 @@ export class FunctionsRouter extends PromiseRouter {
                 {
                   functionName,
                   params,
+                  cleanParams: cleanInput,
                   user: userString,
-                  isMaster: req.auth && req.auth.isMaster
+                  isMaster: req.auth && req.auth.isMaster,
+                  output: result.response.result,
+                  cleanOutput: cleanResult,
                 }
               );
             }
