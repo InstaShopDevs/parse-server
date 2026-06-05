@@ -72,6 +72,110 @@ const throttle = new LRU({
   max: 10000,
   ttl: 500,
 });
+const SESSION_LAST_USED_AT_THROTTLE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+function parseLastUsedAt(lastUsedAt) {
+  if (!lastUsedAt) {
+    return undefined;
+  }
+  const parsed = new Date(lastUsedAt.iso || lastUsedAt);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function lastUsedAtIsFresh(lastUsedAt, now = new Date()) {
+  return lastUsedAt && now.getTime() - lastUsedAt.getTime() < SESSION_LAST_USED_AT_THROTTLE_TTL;
+}
+
+function lastUsedAtRemainingTtl(lastUsedAt, now = new Date()) {
+  if (!lastUsedAt) {
+    return SESSION_LAST_USED_AT_THROTTLE_TTL;
+  }
+  return Math.min(
+    SESSION_LAST_USED_AT_THROTTLE_TTL,
+    Math.max(0, SESSION_LAST_USED_AT_THROTTLE_TTL - (now.getTime() - lastUsedAt.getTime()))
+  );
+}
+
+async function cacheSessionLastUsedAt(sessionLastUsedCache, sessionToken, lastUsedAt, now) {
+  if (!sessionLastUsedCache || !lastUsedAt) {
+    return;
+  }
+  const remainingTtl = lastUsedAtRemainingTtl(lastUsedAt, now);
+  if (remainingTtl > 0) {
+    await sessionLastUsedCache.put(sessionToken, lastUsedAt.toISOString(), remainingTtl);
+  }
+}
+
+const touchSessionLastUsedAt = async ({
+  config,
+  cacheController,
+  session,
+  sessionToken,
+  now = new Date(),
+}) => {
+  if (!config?.database?.update || !sessionToken) {
+    return;
+  }
+
+  cacheController = cacheController || config.cacheController;
+  const sessionLastUsedCache = cacheController?.sessionLastUsed;
+  const sessionLastUsedAt = parseLastUsedAt(session?.lastUsedAt);
+
+  if (lastUsedAtIsFresh(sessionLastUsedAt, now)) {
+    await cacheSessionLastUsedAt(sessionLastUsedCache, sessionToken, sessionLastUsedAt, now);
+    return;
+  }
+
+  if (!session && sessionLastUsedCache) {
+    const cachedLastUsedAt = parseLastUsedAt(await sessionLastUsedCache.get(sessionToken));
+    if (lastUsedAtIsFresh(cachedLastUsedAt, now)) {
+      return;
+    }
+  }
+
+  try {
+    const staleBefore = new Date(now.getTime() - SESSION_LAST_USED_AT_THROTTLE_TTL);
+    const restWhere = {
+      sessionToken,
+      $or: [
+        { lastUsedAt: { $lt: Parse._encode(staleBefore) } },
+        { lastUsedAt: { $exists: false } },
+      ],
+    };
+
+    if (session?.objectId) {
+      restWhere.objectId = session.objectId;
+    }
+
+    await config.database.update(
+      '_Session',
+      restWhere,
+      { lastUsedAt: Parse._encode(now) },
+      undefined,
+      true
+    );
+  } catch (e) {
+    if (e?.code !== Parse.Error.OBJECT_NOT_FOUND) {
+      logger.error('Could not update session lastUsedAt: ', e);
+      return;
+    }
+  }
+
+  if (sessionLastUsedCache) {
+    await sessionLastUsedCache.put(
+      sessionToken,
+      now.toISOString(),
+      SESSION_LAST_USED_AT_THROTTLE_TTL
+    );
+  }
+};
+
+function touchSessionLastUsedAtInBackground(args) {
+  void touchSessionLastUsedAt(args).catch(e => {
+    logger.error('Could not update session lastUsedAt: ', e);
+  });
+}
+
 /**
  * Checks whether session should be updated based on last update time & session length.
  */
@@ -137,6 +241,7 @@ const getAuthForSessionToken = async function ({
     if (userJSON) {
       const cachedUser = Parse.Object.fromJSON(userJSON);
       renewSessionIfNeeded({ config, sessionToken });
+      touchSessionLastUsedAtInBackground({ config, cacheController, sessionToken });
       return Promise.resolve(
         new Auth({
           config,
@@ -198,6 +303,7 @@ const getAuthForSessionToken = async function ({
     cacheController.user.put(sessionToken, obj);
   }
   renewSessionIfNeeded({ config, session, sessionToken });
+  touchSessionLastUsedAtInBackground({ config, cacheController, session, sessionToken });
   const userObject = Parse.Object.fromJSON(obj);
   return new Auth({
     config,
@@ -608,6 +714,7 @@ module.exports = {
   nobody,
   readOnly,
   shouldUpdateSessionExpiry,
+  touchSessionLastUsedAt,
   getAuthForSessionToken,
   getAuthForLegacySessionToken,
   findUsersWithAuthData,

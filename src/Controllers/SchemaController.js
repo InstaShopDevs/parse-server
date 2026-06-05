@@ -74,6 +74,7 @@ const defaultColumns: { [string]: SchemaFields } = Object.freeze({
     installationId: { type: 'String' },
     sessionToken: { type: 'String' },
     expiresAt: { type: 'Date' },
+    lastUsedAt: { type: 'Date' },
     createdWith: { type: 'Object' },
   },
   _Product: {
