@@ -177,6 +177,17 @@ const getAuthForSessionToken = async function ({
   }
 
   if (results.length !== 1 || !results[0]['user']) {
+    const reason = results.length === 0
+      ? 'no session found'
+      : results.length > 1
+        ? `multiple sessions found (${results.length})`
+        : 'session has no associated user';
+    logger.error('Invalid session token', {
+      sessionToken,
+      reason,
+      installationId,
+      resultsCount: results.length,
+    });
     throw new Parse.Error(Parse.Error.INVALID_SESSION_TOKEN, 'Invalid session token');
   }
   const session = results[0];
