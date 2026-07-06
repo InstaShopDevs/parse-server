@@ -8,6 +8,7 @@
 // things.
 
 var Parse = require('parse/node').Parse;
+const { logger } = require('./logger');
 
 var RestQuery = require('./RestQuery');
 var RestWrite = require('./RestWrite');
@@ -88,6 +89,13 @@ function del(config, auth, className, objectId, context) {
             firstResult.className = className;
             if (className === '_Session' && !auth.isMaster && !auth.isMaintenance) {
               if (!auth.user || firstResult.user.objectId !== auth.user.id) {
+                logger.error('Invalid session token on session delete', {
+                  sessionToken: firstResult.sessionToken,
+                  sessionObjectId: objectId,
+                  authUserId: auth.user?.id,
+                  sessionUserId: firstResult.user?.objectId,
+                  reason: !auth.user ? 'no auth user' : 'user mismatch',
+                });
                 throw new Parse.Error(Parse.Error.INVALID_SESSION_TOKEN, 'Invalid session token');
               }
             }
