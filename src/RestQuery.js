@@ -117,10 +117,9 @@ function _UnsafeRestQuery(
   if (!this.auth.isMaster) {
     if (this.className == '_Session') {
       if (!this.auth.user) {
-        logger.error('Invalid session token on _Session query', {
-          reason: 'unauthenticated user querying _Session class',
-          restWhere: JSON.stringify(this.restWhere),
-        });
+        logger.error(
+          `Invalid session token on _Session query: unauthenticated user querying _Session class ${JSON.stringify({ restWhere: this.restWhere })}`
+        );
         throw new Parse.Error(Parse.Error.INVALID_SESSION_TOKEN, 'Invalid session token');
       }
       this.restWhere = {
