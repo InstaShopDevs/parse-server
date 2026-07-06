@@ -516,7 +516,18 @@ export function handleParseErrors(err, req, res, next) {
     }
     res.status(httpStatus);
     res.json({ code: err.code, error: err.message });
-    log.error('Parse error: ', err);
+    if (err.code === Parse.Error.INVALID_SESSION_TOKEN) {
+      const details = JSON.stringify({
+        sessionToken: req.info?.sessionToken,
+        url: req.originalUrl,
+        method: req.method,
+        installationId: req.info?.installationId,
+        userId: req.auth?.user?.id,
+      });
+      log.error(`Parse error: Invalid session token ${details}`);
+    } else {
+      log.error('Parse error: ', err);
+    }
   } else if (err.status && err.message) {
     res.status(err.status);
     res.json({ error: err.message });
