@@ -170,6 +170,7 @@ export class UsersRouter extends ClassesRouter {
 
   handleMe(req) {
     if (!req.info || !req.info.sessionToken) {
+      logger.error('Invalid session token on /me: no session token provided in request');
       throw new Parse.Error(Parse.Error.INVALID_SESSION_TOKEN, 'Invalid session token');
     }
     const sessionToken = req.info.sessionToken;
@@ -185,6 +186,12 @@ export class UsersRouter extends ClassesRouter {
       )
       .then(response => {
         if (!response.results || response.results.length == 0 || !response.results[0].user) {
+          const reason = !response.results || response.results.length === 0
+            ? 'no session found'
+            : 'session has no associated user';
+          logger.error(
+            `Invalid session token on /me: ${reason} ${JSON.stringify({ sessionToken, resultsCount: response.results?.length ?? 0 })}`
+          );
           throw new Parse.Error(Parse.Error.INVALID_SESSION_TOKEN, 'Invalid session token');
         } else {
           const user = response.results[0].user;

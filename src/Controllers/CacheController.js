@@ -46,6 +46,7 @@ export class CacheController extends AdaptableController {
     this.role = new SubCache('role', this);
     this.user = new SubCache('user', this);
     this.graphQL = new SubCache('graphQL', this);
+    this.sessionLastUsed = new SubCache('sessionLastUsed', this);
   }
 
   get(key) {
