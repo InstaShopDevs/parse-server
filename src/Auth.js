@@ -73,6 +73,8 @@ const throttle = new LRU({
   ttl: 500,
 });
 const SESSION_LAST_USED_AT_THROTTLE_TTL = 24 * 60 * 60 * 1000; // 24 hours
+// Session lastUsedAt tracking is temporarily disabled; set to true to re-enable.
+const SESSION_LAST_USED_AT_ENABLED = false;
 
 function parseLastUsedAt(lastUsedAt) {
   if (!lastUsedAt) {
@@ -113,7 +115,7 @@ const touchSessionLastUsedAt = async ({
   sessionToken,
   now = new Date(),
 }) => {
-  if (!config?.database?.update || !sessionToken) {
+  if (!SESSION_LAST_USED_AT_ENABLED || !config?.database?.update || !sessionToken) {
     return;
   }
 
