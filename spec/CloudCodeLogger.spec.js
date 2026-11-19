@@ -392,3 +392,117 @@ describe('Cloud Code Logger', () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Cloud Code Logger per-function logLevel', () => {
+  let spy;
+  const logsFor = prefix =>
+    spy.calls.allArgs().filter(args => typeof args[1] === 'string' && args[1].startsWith(prefix));
+
+  beforeEach(async () => {
+    await reconfigureServer({
+      silent: true,
+      logLevel: undefined,
+      logLevels: {
+        cloudFunctionError: 'error',
+        cloudFunctionSuccess: 'info',
+        triggerAfter: 'info',
+        triggerBeforeError: 'error',
+        triggerBeforeSuccess: 'info',
+      },
+    });
+    spy = spyOn(Config.get('test').loggerController.adapter, 'log').and.callThrough();
+  });
+
+  it('silences the success log of only the function defined with logLevel silent', async () => {
+    Parse.Cloud.define('quietFunction', () => 'ok', { logLevel: 'silent' });
+    Parse.Cloud.define('loudFunction', () => 'ok');
+
+    await Parse.Cloud.run('quietFunction', { foo: 'bar' });
+    await Parse.Cloud.run('loudFunction', { foo: 'bar' });
+
+    expect(logsFor('Ran cloud function quietFunction ').length).toBe(0);
+    const loud = logsFor('Ran cloud function loudFunction ');
+    expect(loud.length).toBe(1);
+    expect(loud[0][0]).toBe('info');
+  });
+
+  it('uses the per-function logLevel instead of logLevels.cloudFunctionSuccess', async () => {
+    Parse.Cloud.define('warnFunction', () => 'ok', { logLevel: 'warn' });
+
+    await Parse.Cloud.run('warnFunction');
+
+    const logs = logsFor('Ran cloud function warnFunction ');
+    expect(logs.length).toBe(1);
+    expect(logs[0][0]).toBe('warn');
+  });
+
+  it('keeps logging errors of a function whose success logLevel is silent', async () => {
+    Parse.Cloud.define(
+      'quietFailingFunction',
+      () => {
+        throw new Error('Failed');
+      },
+      { logLevel: 'silent' }
+    );
+
+    await expectAsync(Parse.Cloud.run('quietFailingFunction')).toBeRejected();
+
+    const logs = logsFor('Failed running cloud function quietFailingFunction ');
+    expect(logs.length).toBe(1);
+    expect(logs[0][0]).toBe('error');
+  });
+
+  it('keeps other validator options enforced alongside logLevel', async () => {
+    Parse.Cloud.define('guardedQuietFunction', () => 'ok', {
+      logLevel: 'silent',
+      requireUser: true,
+    });
+
+    try {
+      await Parse.Cloud.run('guardedQuietFunction');
+      fail('Expected guardedQuietFunction to require a user.');
+    } catch (e) {
+      expect(e.code).toBe(Parse.Error.VALIDATION_ERROR);
+      expect(e.message).toBe('Validation failed. Please login to continue.');
+    }
+  });
+
+  it('rejects an unknown logLevel value', () => {
+    try {
+      Parse.Cloud.define('badLevelFunction', () => 'ok', { logLevel: 'nope' });
+      fail('Expected an invalid logLevel to be rejected.');
+    } catch (e) {
+      expect(e).toBe(
+        `Invalid logLevel 'nope' for Cloud Function validation. Expected one of ${JSON.stringify([
+          'error',
+          'warn',
+          'info',
+          'debug',
+          'verbose',
+          'silly',
+          'silent',
+        ])}`
+      );
+    }
+  });
+
+  it('rejects a logLevel that is not a string', () => {
+    try {
+      Parse.Cloud.define('numberLevelFunction', () => 'ok', { logLevel: 1 });
+      fail('Expected a non-string logLevel to be rejected.');
+    } catch (e) {
+      expect(e).toBe(
+        'Invalid type for Cloud Function validation key logLevel. Expected string, actual number'
+      );
+    }
+  });
+
+  it('rejects logLevel on triggers, where it would have no effect', () => {
+    try {
+      Parse.Cloud.beforeSave('TestObject', () => {}, { logLevel: 'silent' });
+      fail('Expected logLevel to be rejected on a trigger.');
+    } catch (e) {
+      expect(e).toBe('logLevel is not a supported parameter for Cloud Function validations.');
+    }
+  });
+});

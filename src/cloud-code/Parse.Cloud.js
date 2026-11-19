@@ -1,13 +1,14 @@
 import { Parse } from 'parse/node';
 import * as triggers from '../triggers';
 import { addRateLimit } from '../middlewares';
+import { logLevels as validLogLevels } from '../Controllers/LoggerController';
 const Config = require('../Config');
 
 function isParseObjectConstructor(object) {
   return typeof object === 'function' && Object.prototype.hasOwnProperty.call(object, 'className');
 }
 
-function validateValidator(validator) {
+function validateValidator(validator, { allowLogLevel = false } = {}) {
   if (!validator || typeof validator === 'function') {
     return;
   }
@@ -30,6 +31,9 @@ function validateValidator(validator) {
     fields: [Array, Object],
     rateLimit: [Object],
   };
+  if (allowLogLevel) {
+    allowedKeys.logLevel = [String];
+  }
   const getType = fn => {
     if (Array.isArray(fn)) {
       return 'array';
@@ -71,6 +75,11 @@ function validateValidator(validator) {
         }
       }
     }
+  }
+  if (validator.logLevel !== undefined && !validLogLevels.includes(validator.logLevel)) {
+    throw `Invalid logLevel '${validator.logLevel}' for Cloud Function validation. Expected one of ${JSON.stringify(
+      validLogLevels
+    )}`;
   }
 }
 const getRoute = parseClass => {
@@ -126,7 +135,7 @@ var ParseCloud = {};
  * @param {(Object|Function)} validator An optional function to help validating cloud code. This function can be an async function and should take one parameter a {@link Parse.Cloud.FunctionRequest}, or a {@link Parse.Cloud.ValidatorObject}.
  */
 ParseCloud.define = function (functionName, handler, validationHandler) {
-  validateValidator(validationHandler);
+  validateValidator(validationHandler, { allowLogLevel: true });
   triggers.addFunction(functionName, handler, validationHandler, Parse.applicationId);
   if (validationHandler && validationHandler.rateLimit) {
     addRateLimit(
@@ -758,6 +767,7 @@ module.exports = ParseCloud;
  * @property {Boolean} requireMaster whether the cloud trigger requires a master key.
  * @property {Boolean} validateMasterKey whether the validator should run if masterKey is provided. Defaults to false.
  * @property {Boolean} skipWithMasterKey whether the cloud code function should be ignored using a masterKey.
+ * @property {String} logLevel Cloud Functions only. Log level for this function's success log ("Ran cloud function ..."), overriding the server-wide `logLevels.cloudFunctionSuccess`. Use `silent` to disable it. Errors keep using `logLevels.cloudFunctionError`. Defaults to the server-wide setting.
  *
  * @property {Array<String>|Object} requireUserKeys If set, keys required on request.user to make the request.
  * @property {String} requireUserKeys.field If requireUserKeys is an object, name of field to validate on request user

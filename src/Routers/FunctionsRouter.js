@@ -144,10 +144,14 @@ export class FunctionsRouter extends PromiseRouter {
       const { success, error } = FunctionsRouter.createResponseObject(
         result => {
           try {
-            if (req.config.logLevels.cloudFunctionSuccess !== 'silent') {
+            const theValidator = triggers.getValidator(functionName, applicationId);
+            const successLogLevel =
+              (theValidator && typeof theValidator === 'object' && theValidator.logLevel) ||
+              req.config.logLevels.cloudFunctionSuccess;
+            if (successLogLevel !== 'silent') {
               const cleanInput = logger.truncateLogMessage(JSON.stringify(params));
               const cleanResult = logger.truncateLogMessage(JSON.stringify(result.response.result));
-              logger[req.config.logLevels.cloudFunctionSuccess](
+              logger[successLogLevel](
                 `Ran cloud function ${functionName} for user ${userString} with:\n  Input: ${cleanInput}\n  Result: ${cleanResult}`,
                 {
                   functionName,
