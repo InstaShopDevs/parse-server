@@ -393,7 +393,7 @@ describe('Cloud Code Logger', () => {
   });
 });
 
-describe('Cloud Code Logger per-function logLevel', () => {
+describe('Cloud Code Logger per-function options', () => {
   let spy;
   const logsFor = prefix =>
     spy.calls.allArgs().filter(args => typeof args[1] === 'string' && args[1].startsWith(prefix));
@@ -504,5 +504,178 @@ describe('Cloud Code Logger per-function logLevel', () => {
     } catch (e) {
       expect(e).toBe('logLevel is not a supported parameter for Cloud Function validations.');
     }
+  });
+
+  it('omits input from success and failure entries while passing all params to the handler', async () => {
+    Parse.Cloud.define(
+      'omitInput',
+      ({ params }) => {
+        if (params.fail) {
+          throw new Error('lookup failed');
+        }
+        return params.clientIds.length;
+      },
+      { logParams: false, logResult: true }
+    );
+
+    const params = { clientIds: ['excluded-client'] };
+    expect(await Parse.Cloud.run('omitInput', params)).toBe(1);
+    await expectAsync(Parse.Cloud.run('omitInput', { ...params, fail: true })).toBeRejected();
+
+    const [success] = logsFor('Ran cloud function omitInput ');
+    const [failure] = logsFor('Failed running cloud function omitInput ');
+    for (const entry of [success, failure]) {
+      expect(entry[1]).not.toContain('Input:');
+      expect(Object.hasOwn(entry[2], 'params')).toBeFalse();
+      expect(Object.hasOwn(entry[2], 'cleanParams')).toBeFalse();
+      expect(JSON.stringify(entry)).not.toContain('excluded-client');
+    }
+    expect(success[2].output).toBe(1);
+    expect(failure[2].error.message).toBe('lookup failed');
+  });
+
+  it('logs only selected top-level params on success and validation failure', async () => {
+    Parse.Cloud.define('selectedInput', ({ params }) => params.clientIds.length, {
+      logLevel: 'warn',
+      logParams: ['limit', 'filter', 'missing', 'credentials.secret', 'toString', 'password'],
+      fields: ['requiredField'],
+    });
+    const params = {
+      clientIds: ['excluded-client'],
+      credentials: { secret: 'excluded-secret' },
+      password: 'excluded-password',
+      limit: 0,
+      filter: { active: false },
+    };
+    const selected = { limit: 0, filter: { active: false }, password: '********' };
+
+    expect(await Parse.Cloud.run('selectedInput', { ...params, requiredField: true })).toBe(1);
+    await expectAsync(Parse.Cloud.run('selectedInput', params)).toBeRejected();
+
+    const [success] = logsFor('Ran cloud function selectedInput ');
+    const [failure] = logsFor('Failed running cloud function selectedInput ');
+    for (const entry of [success, failure]) {
+      expect(entry[1]).toContain(`\n  Input: ${JSON.stringify(selected)}\n`);
+      expect(entry[2].params).toEqual(selected);
+      expect(JSON.stringify(entry)).not.toContain('excluded-');
+    }
+    expect(success[0]).toBe('warn');
+    expect(success[2].cleanParams).toBe(JSON.stringify(selected));
+    expect(failure[0]).toBe('error');
+    expect(failure[2].error.code).toBe(Parse.Error.VALIDATION_ERROR);
+  });
+
+  it('treats an empty list as selecting no keys and true as selecting all keys', async () => {
+    Parse.Cloud.define('noKeys', () => 'ok', { logParams: [] });
+    Parse.Cloud.define('allKeys', () => 'ok', { logParams: true });
+    const params = { limit: 0 };
+    await Parse.Cloud.run('noKeys', params);
+    await Parse.Cloud.run('allKeys', params);
+    expect(logsFor('Ran cloud function noKeys ')[0][2].params).toEqual({});
+    expect(logsFor('Ran cloud function allKeys ')[0][2].params).toEqual(params);
+  });
+
+  it('can log the input alone or select fields independently on both sides', async () => {
+    const result = { count: 0, details: 'excluded-result' };
+    const params = { limit: 1, cursor: 'full-input' };
+    Parse.Cloud.define('inputOnly', () => result, { logResult: false });
+    Parse.Cloud.define('selectedFields', () => result, {
+      logParams: ['limit'],
+      logResult: ['count', 'missing', 'toString'],
+    });
+
+    expect(await Parse.Cloud.run('inputOnly', params)).toEqual(result);
+    expect(await Parse.Cloud.run('selectedFields', params)).toEqual(result);
+
+    const [inputOnly] = logsFor('Ran cloud function inputOnly ');
+    expect(inputOnly[2].params).toEqual(params);
+    expect(inputOnly[1]).not.toContain('Result:');
+    expect(Object.hasOwn(inputOnly[2], 'output')).toBeFalse();
+    expect(Object.hasOwn(inputOnly[2], 'cleanOutput')).toBeFalse();
+    expect(JSON.stringify(inputOnly)).not.toContain('excluded-result');
+
+    const [selected] = logsFor('Ran cloud function selectedFields ');
+    expect(selected[1]).toContain('\n  Input: {"limit":1}\n  Result: {"count":0}');
+    expect(selected[2].params).toEqual({ limit: 1 });
+    expect(selected[2].output).toEqual({ count: 0 });
+    expect(selected[2].cleanOutput).toBe('{"count":0}');
+    expect(JSON.stringify(selected)).not.toContain('excluded-result');
+    expect(JSON.stringify(selected)).not.toContain('full-input');
+  });
+
+  it('projects each result row and logs an empty object for values without selected fields', async () => {
+    Parse.Cloud.define('rows', ({ params }) => params.value, {
+      logParams: false,
+      logResult: ['id', 'info', 'nested.key', 'password'],
+    });
+    const rows = [
+      { id: 2, info: { active: false }, nested: { key: 'excluded' }, password: 'excluded' },
+      { id: 1, 'nested.key': 'literal', hidden: 'excluded' },
+      'excluded',
+      null,
+    ];
+    const projected = [
+      { id: 2, info: { active: false }, password: '********' },
+      { id: 1, 'nested.key': 'literal' },
+      {},
+      {},
+    ];
+    const cases = [[rows, projected], ['excluded', {}], [null, {}]];
+    for (const [value, logged] of cases) {
+      expect(await Parse.Cloud.run('rows', { value })).toEqual(value);
+      const entry = logsFor('Ran cloud function rows ').pop();
+      expect(entry[1]).toContain(`\n  Result: ${JSON.stringify(logged)}`);
+      expect(entry[2].output).toEqual(logged);
+      expect(entry[2].cleanOutput).toBe(JSON.stringify(logged));
+      expect(JSON.stringify(entry)).not.toContain('excluded');
+    }
+  });
+
+  it('accepts an empty result allowlist and rejects invalid settings at definition time', async () => {
+    Parse.Cloud.define('noResultFields', () => ({ id: 1 }), { logResult: [] });
+    expect(await Parse.Cloud.run('noResultFields')).toEqual({ id: 1 });
+    expect(logsFor('Ran cloud function noResultFields ')[0][2].output).toEqual({});
+    for (const logResult of [null, 'id', {}, ['id', 5], ['']]) {
+      expect(() => Parse.Cloud.define('invalid', () => {}, { logResult })).toThrow(
+        'Invalid logResult for Cloud Function. Expected a boolean or an array of non-empty field names.'
+      );
+    }
+    expect(() => Parse.Cloud.beforeSave('TestObject', () => {}, { logResult: false })).toThrow(
+      'logResult is not a supported parameter for Cloud Function validations.'
+    );
+  });
+
+  it('keeps the logging options of the handler that received the request', async () => {
+    Parse.Cloud.define(
+      'redefined',
+      () => {
+        Parse.Cloud.define('redefined', () => 'new');
+        return 'original';
+      },
+      { logLevel: 'warn', logParams: false, logResult: false }
+    );
+    const params = { limit: 1 };
+    expect(await Parse.Cloud.run('redefined', params)).toBe('original');
+    expect(await Parse.Cloud.run('redefined', params)).toBe('new');
+
+    const [original, replacement] = logsFor('Ran cloud function redefined ');
+    expect(original[0]).toBe('warn');
+    expect(original[1]).not.toContain(' with:');
+    expect(original[2].params).toBeUndefined();
+    expect(original[2].output).toBeUndefined();
+    expect(replacement[0]).toBe('info');
+    expect(replacement[2].params).toEqual(params);
+    expect(replacement[2].output).toBe('new');
+  });
+
+  it('rejects invalid logParams at definition time and rejects logParams on triggers', () => {
+    for (const logParams of [null, 'status', {}, [1], ['']]) {
+      expect(() => Parse.Cloud.define('invalid', () => {}, { logParams })).toThrow(
+        'Invalid logParams for Cloud Function. Expected a boolean or an array of non-empty parameter names.'
+      );
+    }
+    expect(() => Parse.Cloud.beforeSave('TestObject', () => {}, { logParams: false })).toThrow(
+      'logParams is not a supported parameter for Cloud Function validations.'
+    );
   });
 });

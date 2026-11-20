@@ -35,6 +35,36 @@ function parseParams(params, config) {
   return _.mapValues(params, item => parseObject(item, config));
 }
 
+function selectLogFields(value, fields) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  const selected = Object.fromEntries(
+    fields.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]])
+  );
+  if (Object.hasOwn(selected, 'password')) {
+    // Mask the copy before stringifying it for the log.
+    logger.maskSensitive([{ params: selected }]);
+  }
+  return selected;
+}
+
+function getLogPayload(label, value, fields) {
+  if (fields === false) {
+    return { line: '' };
+  }
+  if (Array.isArray(fields)) {
+    value = Array.isArray(value)
+      ? value.map(item => selectLogFields(item, fields))
+      : selectLogFields(value, fields);
+  }
+  const text = logger.truncateLogMessage(JSON.stringify(value));
+  const line = `\n  ${label}: ${text}`;
+  return label === 'Input'
+    ? { line, params: value, cleanParams: text }
+    : { line, output: value, cleanOutput: text };
+}
+
 export class FunctionsRouter extends PromiseRouter {
   mountRoutes() {
     this.route(
@@ -125,6 +155,10 @@ export class FunctionsRouter extends PromiseRouter {
     if (!theFunction) {
       throw new Parse.Error(Parse.Error.SCRIPT_FAILED, `Invalid function: "${functionName}"`);
     }
+    const validator = triggers.getValidator(functionName, applicationId);
+    const { logLevel, logParams, logResult } =
+      typeof validator === 'object' && validator ? validator : {};
+    const successLogLevel = logLevel || req.config.logLevels.cloudFunctionSuccess;
     let params = Object.assign({}, req.body, req.query);
     params = parseParams(params, req.config);
     const request = {
@@ -144,25 +178,22 @@ export class FunctionsRouter extends PromiseRouter {
       const { success, error } = FunctionsRouter.createResponseObject(
         result => {
           try {
-            const theValidator = triggers.getValidator(functionName, applicationId);
-            const successLogLevel =
-              (theValidator && typeof theValidator === 'object' && theValidator.logLevel) ||
-              req.config.logLevels.cloudFunctionSuccess;
             if (successLogLevel !== 'silent') {
-              const cleanInput = logger.truncateLogMessage(JSON.stringify(params));
-              const cleanResult = logger.truncateLogMessage(JSON.stringify(result.response.result));
-              logger[successLogLevel](
-                `Ran cloud function ${functionName} for user ${userString} with:\n  Input: ${cleanInput}\n  Result: ${cleanResult}`,
-                {
-                  functionName,
-                  params,
-                  cleanParams: cleanInput,
-                  user: userString,
-                  isMaster: req.auth && req.auth.isMaster,
-                  output: result.response.result,
-                  cleanOutput: cleanResult,
-                }
+              const { line: inputLine, ...input } = getLogPayload('Input', params, logParams);
+              const { line: resultLine, ...output } = getLogPayload(
+                'Result',
+                result.response.result,
+                logResult
               );
+              const summary = `Ran cloud function ${functionName} for user ${userString}`;
+              const details = inputLine + resultLine;
+              logger[successLogLevel](details ? `${summary} with:${details}` : summary, {
+                functionName,
+                ...input,
+                user: userString,
+                isMaster: req.auth && req.auth.isMaster,
+                ...output,
+              });
             }
             resolve(result);
           } catch (e) {
@@ -172,14 +203,14 @@ export class FunctionsRouter extends PromiseRouter {
         error => {
           try {
             if (req.config.logLevels.cloudFunctionError !== 'silent') {
-              const cleanInput = logger.truncateLogMessage(JSON.stringify(params));
+              const { line, params: loggedParams } = getLogPayload('Input', params, logParams);
               logger[req.config.logLevels.cloudFunctionError](
-                `Failed running cloud function ${functionName} for user ${userString} with:\n  Input: ${cleanInput}\n  Error: ` +
+                `Failed running cloud function ${functionName} for user ${userString} with:${line}\n  Error: ` +
                   JSON.stringify(error),
                 {
                   functionName,
                   error,
-                  params,
+                  ...(loggedParams && { params: loggedParams }),
                   user: userString,
                 }
               );
