@@ -1,13 +1,14 @@
 import { Parse } from 'parse/node';
 import * as triggers from '../triggers';
 import { addRateLimit } from '../middlewares';
+import { logLevels as validLogLevels } from '../Controllers/LoggerController';
 const Config = require('../Config');
 
 function isParseObjectConstructor(object) {
   return typeof object === 'function' && Object.prototype.hasOwnProperty.call(object, 'className');
 }
 
-function validateValidator(validator) {
+function validateValidator(validator, { allowLogOptions = false } = {}) {
   if (!validator || typeof validator === 'function') {
     return;
   }
@@ -30,6 +31,9 @@ function validateValidator(validator) {
     fields: [Array, Object],
     rateLimit: [Object],
   };
+  if (allowLogOptions) {
+    allowedKeys.logLevel = [String];
+  }
   const getType = fn => {
     if (Array.isArray(fn)) {
       return 'array';
@@ -58,6 +62,17 @@ function validateValidator(validator) {
     }
   };
   for (const key in validator) {
+    if (allowLogOptions && (key === 'logParams' || key === 'logResult')) {
+      const value = validator[key];
+      if (
+        typeof value !== 'boolean' &&
+        !(Array.isArray(value) && value.every(key => typeof key === 'string' && key.length > 0))
+      ) {
+        const names = key === 'logParams' ? 'parameter names' : 'field names';
+        throw `Invalid ${key} for Cloud Function. Expected a boolean or an array of non-empty ${names}.`;
+      }
+      continue;
+    }
     checkKey(key, allowedKeys, validator[key]);
     if (key === 'fields' || key === 'requireUserKeys') {
       const values = validator[key];
@@ -71,6 +86,11 @@ function validateValidator(validator) {
         }
       }
     }
+  }
+  if (validator.logLevel !== undefined && !validLogLevels.includes(validator.logLevel)) {
+    throw `Invalid logLevel '${validator.logLevel}' for Cloud Function validation. Expected one of ${JSON.stringify(
+      validLogLevels
+    )}`;
   }
 }
 const getRoute = parseClass => {
@@ -117,6 +137,11 @@ var ParseCloud = {};
  * Parse.Cloud.define('functionName', (request) => {
  *   // code here
  * }, { ...validationObject });
+ *
+ * Parse.Cloud.define('getOrder', getOrderHandler, {
+ *   logParams: ['orderId'],
+ *   logResult: ['status', 'total'],
+ * });
  * ```
  *
  * @static
@@ -126,7 +151,7 @@ var ParseCloud = {};
  * @param {(Object|Function)} validator An optional function to help validating cloud code. This function can be an async function and should take one parameter a {@link Parse.Cloud.FunctionRequest}, or a {@link Parse.Cloud.ValidatorObject}.
  */
 ParseCloud.define = function (functionName, handler, validationHandler) {
-  validateValidator(validationHandler);
+  validateValidator(validationHandler, { allowLogOptions: true });
   triggers.addFunction(functionName, handler, validationHandler, Parse.applicationId);
   if (validationHandler && validationHandler.rateLimit) {
     addRateLimit(
@@ -758,6 +783,14 @@ module.exports = ParseCloud;
  * @property {Boolean} requireMaster whether the cloud trigger requires a master key.
  * @property {Boolean} validateMasterKey whether the validator should run if masterKey is provided. Defaults to false.
  * @property {Boolean} skipWithMasterKey whether the cloud code function should be ignored using a masterKey.
+ * @property {String} logLevel Cloud Functions only. Log level for this function's success log ("Ran cloud function ..."), overriding the server-wide `logLevels.cloudFunctionSuccess`. Use `silent` to disable it. Errors keep using `logLevels.cloudFunctionError`. Defaults to the server-wide setting.
+ * @property {Boolean|Array<String>} [logParams=true] Request parameters in automatic Cloud Function success and failure logs.
+ * Use `false` to omit input or a list such as `['status', 'limit']` to include only those top-level keys from `request.params`.
+ * Keys are literal and include their entire value. Missing keys are skipped. An empty list logs an empty object.
+ * @property {Boolean|Array<String>} [logResult=true] Response data in the automatic Cloud Function success log.
+ * Use `false` to omit the result or a list such as `['status', 'total']` to select literal top-level keys from the encoded result.
+ * For an array, the list selects fields from each object. Values with no matching fields, including primitives, log as `{}`.
+ * Both options apply to the log message and its structured metadata. Error details and verbose HTTP logs are configured separately.
  *
  * @property {Array<String>|Object} requireUserKeys If set, keys required on request.user to make the request.
  * @property {String} requireUserKeys.field If requireUserKeys is an object, name of field to validate on request user
